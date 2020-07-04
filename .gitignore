@@ -1,0 +1,6 @@
+esp-homekit-irrigation.xcodeproj/
+build/
+firmware/
+src/.DS_Store
+src/udplog-client
+.DS_Store
