@@ -59,7 +59,7 @@ homekit_characteristic_t revision     = HOMEKIT_CHARACTERISTIC_(FIRMWARE_REVISIO
 
 homekit_characteristic_t valve_1_active = HOMEKIT_CHARACTERISTIC_(ACTIVE, false, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(valve_1_active_callback) );
 homekit_characteristic_t valve_1_in_use = HOMEKIT_CHARACTERISTIC_(IN_USE, 0);
-homekit_characteristic_t valve_1_valve_type = HOMEKIT_CHARACTERISTIC_(ACTIVE, 1);
+homekit_characteristic_t valve_1_valve_type = HOMEKIT_CHARACTERISTIC_(VALVE_TYPE, 1);
 
 
 // The GPIO pin that is connected to the first relay on the irrigation controller.
@@ -71,7 +71,7 @@ const int LED_GPIO = 2;
 // The GPIO pin that is oconnected to the button on the irrigation controller.
 const int BUTTON_GPIO = 0;
 
-int led_off_value=0; /* global varibale to support LEDs set to 0 where the LED is connected to GND, 1 where +3.3v */
+int led_off_value=1; /* global varibale to support LEDs set to 0 where the LED is connected to GND, 1 where +3.3v */
 
 const int status_led_gpio = 2; /*set the gloabl variable for the led to be used for showing status */
 
@@ -111,7 +111,8 @@ void gpio_init() {
     led_write(false, LED_GPIO);
 
     gpio_enable(VALVE_1_GPIO, GPIO_OUTPUT);
-    relay_write(valve_1_active.value.bool_value, VALVE_1_GPIO);
+    relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
+    /* relay requires 1 for off and 0 for on */
     
     adv_button_set_evaluate_delay(10);
     
@@ -127,7 +128,15 @@ void gpio_init() {
 
 
 void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
-    relay_write(valve_1_active.value.bool_value, VALVE_1_GPIO);
+    
+    printf ("%s: Value: %d\n", __func__,valve_1_active.value.bool_value);
+    if (valve_1_active.value.bool_value == true){
+        valve_1_in_use.value.bool_value = 1;
+    } else {
+        valve_1_in_use.value.bool_value = 0;
+    }
+    relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
+    /* relay requies low for on */
     led_write(valve_1_active.value.bool_value, LED_GPIO);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 
