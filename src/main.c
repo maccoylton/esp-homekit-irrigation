@@ -38,6 +38,10 @@
 #include <ota-api.h>
 
 #define SAVE_DELAY 2000
+#define SAFETY_DELAY 1800000
+
+ETSTimer safety_timer;
+
 
 void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context);
 
@@ -75,16 +79,29 @@ int led_off_value=1; /* global varibale to support LEDs set to 0 where the LED i
 
 const int status_led_gpio = 2; /*set the gloabl variable for the led to be used for showing status */
 
+void safety_timer_function(){
+
+    printf ("%s:  Switching off water\n", __func__);
+    valve_1_in_use.value.bool_value = 0;
+    valve_1_active.value.bool_value = false;
+    relay_write(false, VALVE_1_GPIO);
+    /* relay requies low for on */
+    led_write(false, LED_GPIO);
+    homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
+    homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
+    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+}
+
 
 void button_single_press_callback(uint8_t gpio, void* args, uint8_t param) {
     
     printf("Button event single press on GPIO : %d\n", gpio);
     printf("Toggling switch one\n");
-/*    switch_on.value.bool_value = !switch_on.value.bool_value;
-    relay_write(switch_on.value.bool_value, VALVE_GPIO);
-    homekit_characteristic_notify(&switch_on, switch_on.value);
+    valve_1_active.value.bool_value = !valve_1_active.value.bool_value;
+    relay_write(valve_1_active.value.bool_value, VALVE_1_GPIO);
+    homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
- */
+
 }
 
 
@@ -138,8 +155,9 @@ void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, 
     relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
     /* relay requies low for on */
     led_write(valve_1_active.value.bool_value, LED_GPIO);
+    homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
-
+    sdk_os_timer_arm (&safety_timer, SAVE_DELAY, 0 );
 }
 
 homekit_accessory_t *accessories[] = {
@@ -190,6 +208,8 @@ void save_characteristics ( ){
     
     printf ("%s:\n", __func__);
     save_characteristic_to_flash(&wifi_check_interval, wifi_check_interval.value);
+    save_characteristic_to_flash(&valve_1_active, valve_1_active.value);
+    save_characteristic_to_flash(&valve_1_in_use, valve_1_in_use.value);
 }
 
 
@@ -201,7 +221,12 @@ void accessory_init_not_paired (void) {
 void accessory_init (void ){
     /* initalise anything you don't want started until wifi and pairing is confirmed */
     load_characteristic_from_flash(&wifi_check_interval);
+    save_characteristic_to_flash(&valve_1_active, valve_1_active.value);
+    save_characteristic_to_flash(&valve_1_in_use, valve_1_in_use.value);
     homekit_characteristic_notify(&wifi_check_interval, wifi_check_interval.value);
+    homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
+    homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
+    sdk_os_timer_setfn(&safety_timer, safety_timer_function, NULL);
 }
 
 void user_init(void) {
