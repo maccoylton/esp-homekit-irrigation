@@ -98,6 +98,13 @@ void button_single_press_callback(uint8_t gpio, void* args, uint8_t param) {
     printf("Button event single press on GPIO : %d\n", gpio);
     printf("Toggling switch one\n");
     valve_1_active.value.bool_value = !valve_1_active.value.bool_value;
+    if (valve_1_active.value.bool_value == true){
+        valve_1_in_use.value.bool_value = 1;
+        sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+    } else {
+        valve_1_in_use.value.bool_value = 0;
+        sdk_os_timer_disarm (&save_timer);
+    }
     relay_write(valve_1_active.value.bool_value, VALVE_1_GPIO);
     homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
@@ -149,14 +156,15 @@ void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, 
     printf ("%s: Value: %d\n", __func__,valve_1_active.value.bool_value);
     if (valve_1_active.value.bool_value == true){
         valve_1_in_use.value.bool_value = 1;
+        sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
     } else {
         valve_1_in_use.value.bool_value = 0;
+        sdk_os_timer_disarm (&save_timer);
     }
     relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
     /* relay requies low for on */
     led_write(valve_1_active.value.bool_value, LED_GPIO);
     homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
-    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
     sdk_os_timer_arm (&safety_timer, SAVE_DELAY, 0 );
 }
 
