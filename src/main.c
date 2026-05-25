@@ -8,7 +8,7 @@
 #define DEVICE_NAME "Irrigation"
 #define DEVICE_MODEL "2"
 #define DEVICE_SERIAL "12345678"
-#define FW_VERSION "1.0"
+#define FW_VERSION "0.0.6"
 
 #include <stdio.h>
 #include <espressif/esp_wifi.h>
@@ -37,13 +37,15 @@
 
 #include <ota-api.h>
 
-#define SAVE_DELAY 2000
+#define SAVE_DELAY 3000
 #define SAFETY_DELAY 1800000
 
 ETSTimer safety_timer;
+ETSTimer safety_timer_2;
 
 
 void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context);
+void valve_2_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context);
 
 
 homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_CHECK_INTERVAL, 10, .setter=wifi_check_interval_set);
@@ -52,6 +54,9 @@ homekit_characteristic_t task_stats   = HOMEKIT_CHARACTERISTIC_(CUSTOM_TASK_STAT
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t ota_beta     = HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_BETA, false, .setter=ota_beta_set);
 homekit_characteristic_t lcm_beta    = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_BETA, false, .setter=lcm_beta_set);
+homekit_characteristic_t lcm_emergency = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_EMERGENCY, false, .setter=lcm_emergency_set);
+homekit_characteristic_t preserve_state   = HOMEKIT_CHARACTERISTIC_(CUSTOM_PRESERVE_STATE, false, .setter=preserve_state_set);
+homekit_characteristic_t log_level_ch     = HOMEKIT_CHARACTERISTIC_(CUSTOM_LOG_LEVEL, 2, .setter=log_level_set);
 
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name         = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
@@ -65,11 +70,15 @@ homekit_characteristic_t valve_1_active = HOMEKIT_CHARACTERISTIC_(ACTIVE, false,
 homekit_characteristic_t valve_1_in_use = HOMEKIT_CHARACTERISTIC_(IN_USE, 0);
 homekit_characteristic_t valve_1_valve_type = HOMEKIT_CHARACTERISTIC_(VALVE_TYPE, 1);
 
+homekit_characteristic_t valve_2_active = HOMEKIT_CHARACTERISTIC_(ACTIVE, false, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(valve_2_active_callback) );
+homekit_characteristic_t valve_2_in_use = HOMEKIT_CHARACTERISTIC_(IN_USE, 0);
+homekit_characteristic_t valve_2_valve_type = HOMEKIT_CHARACTERISTIC_(VALVE_TYPE, 1);
+
 
 // The GPIO pin that is connected to the first relay on the irrigation controller.
 const int VALVE_1_GPIO = 4;
 // The GPIO pin that is connected to the second relay on the irrigation controller.
-const int VALVE_2_GPIO = 5;
+const int VALVE_2_GPIO = 5; // FIXME: set this after disassembling device
 // The GPIO pin that is connected to the LED on the irrigation controller.
 const int LED_GPIO = 2;
 // The GPIO pin that is oconnected to the button on the irrigation controller.
@@ -81,31 +90,51 @@ const int status_led_gpio = 2; /*set the gloabl variable for the led to be used 
 
 void safety_timer_function(){
 
-    printf ("%s:  Switching off water\n", __func__);
-    valve_1_in_use.value.bool_value = 0;
-    valve_1_active.value.bool_value = false;
+    LOG(LOG_ACTION, "%s:  Switching off valve 1\n", __func__);
+    valve_1_in_use.value.uint8_value = 0;
+    valve_1_active.value.uint8_value = 0;
     relay_write(false, VALVE_1_GPIO);
-    /* relay requies low for on */
-    led_write(false, LED_GPIO);
+    if (!valve_2_active.value.uint8_value) {
+        led_write(false, LED_GPIO);
+    }
     homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
     homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
+    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+}
+
+void safety_timer_function_2(){
+
+    LOG(LOG_ACTION, "%s:  Switching off valve 2\n", __func__);
+    valve_2_in_use.value.uint8_value = 0;
+    valve_2_active.value.uint8_value = 0;
+    relay_write(false, VALVE_2_GPIO);
+    if (!valve_1_active.value.uint8_value) {
+        led_write(false, LED_GPIO);
+    }
+    homekit_characteristic_notify(&valve_2_in_use, valve_2_in_use.value);
+    homekit_characteristic_notify(&valve_2_active, valve_2_active.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 }
 
 
 void button_single_press_callback(uint8_t gpio, void* args, uint8_t param) {
     
-    printf("Button event single press on GPIO : %d\n", gpio);
-    printf("Toggling switch one\n");
-    valve_1_active.value.bool_value = !valve_1_active.value.bool_value;
-    if (valve_1_active.value.bool_value == true){
-        valve_1_in_use.value.bool_value = 1;
+    LOG(LOG_ACTION, "Button event single press on GPIO : %d\n", gpio);
+    LOG(LOG_ACTION, "Toggling valve 1\n");
+    valve_1_active.value.uint8_value = !valve_1_active.value.uint8_value;
+    if (valve_1_active.value.uint8_value == 1){
+        valve_1_in_use.value.uint8_value = 1;
         sdk_os_timer_arm (&safety_timer, SAFETY_DELAY, 0 );
     } else {
-        valve_1_in_use.value.bool_value = 0;
+        valve_1_in_use.value.uint8_value = 0;
         sdk_os_timer_disarm (&safety_timer);
     }
-    relay_write(valve_1_active.value.bool_value, VALVE_1_GPIO);
+    relay_write(valve_1_active.value.uint8_value, VALVE_1_GPIO);
+    if (valve_1_active.value.uint8_value || valve_2_active.value.uint8_value) {
+        led_write(true, LED_GPIO);
+    } else {
+        led_write(false, LED_GPIO);
+    }
     homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 
@@ -114,17 +143,34 @@ void button_single_press_callback(uint8_t gpio, void* args, uint8_t param) {
 
 void button_double_press_callback(uint8_t gpio, void* args, uint8_t param) {
     
-    printf("Button event long press on GPIO : %d\n", gpio);
+    LOG(LOG_ACTION, "Button event double press on GPIO : %d\n", gpio);
+    LOG(LOG_ACTION, "Toggling valve 2\n");
+    valve_2_active.value.uint8_value = !valve_2_active.value.uint8_value;
+    if (valve_2_active.value.uint8_value == 1){
+        valve_2_in_use.value.uint8_value = 1;
+        sdk_os_timer_arm (&safety_timer_2, SAFETY_DELAY, 0 );
+    } else {
+        valve_2_in_use.value.uint8_value = 0;
+        sdk_os_timer_disarm (&safety_timer_2);
+    }
+    relay_write(valve_2_active.value.uint8_value, VALVE_2_GPIO);
+    if (valve_1_active.value.uint8_value || valve_2_active.value.uint8_value) {
+        led_write(true, LED_GPIO);
+    } else {
+        led_write(false, LED_GPIO);
+    }
+    homekit_characteristic_notify(&valve_2_active, valve_2_active.value);
+    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 }
 
 void button_long_press_callback(uint8_t gpio, void* args, uint8_t param) {
     
-    printf("Button event long press on GPIO : %d\n", gpio);
+    LOG(LOG_ACTION, "Button event long press on GPIO : %d\n", gpio);
 }
 
 void button_very_long_press_callback(uint8_t gpio, void* args, uint8_t param) {
     
-    printf("Button event very long press on GPIO : %d\n", gpio);
+    LOG(LOG_ACTION, "Button event very long press on GPIO : %d\n", gpio);
     reset_configuration();
     
 }
@@ -135,13 +181,16 @@ void gpio_init() {
     led_write(false, LED_GPIO);
 
     gpio_enable(VALVE_1_GPIO, GPIO_OUTPUT);
-    relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
+    relay_write(!valve_1_active.value.uint8_value, VALVE_1_GPIO);
     /* relay requires 1 for off and 0 for on */
+
+    gpio_enable(VALVE_2_GPIO, GPIO_OUTPUT);
+    relay_write(!valve_2_active.value.uint8_value, VALVE_2_GPIO);
     
     adv_button_set_evaluate_delay(10);
     
     /* GPIO for button, pull-up resistor, inverted */
-    printf("Initialising buttons\n");
+    LOG(LOG_FLOW, "Initialising buttons\n");
     adv_button_create(BUTTON_GPIO, true, false);
     adv_button_register_callback_fn(BUTTON_GPIO, button_single_press_callback, SINGLEPRESS_TYPE, NULL, 0);
     adv_button_register_callback_fn(BUTTON_GPIO, button_double_press_callback, DOUBLEPRESS_TYPE, NULL, 0);
@@ -153,18 +202,42 @@ void gpio_init() {
 
 void valve_1_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
     
-    printf ("%s: Value: %d\n", __func__,valve_1_active.value.bool_value);
-    if (valve_1_active.value.bool_value == true){
-        valve_1_in_use.value.bool_value = 1;
+    LOG(LOG_ACTION, "%s: Value: %d\n", __func__,valve_1_active.value.uint8_value);
+    if (valve_1_active.value.uint8_value == 1){
+        valve_1_in_use.value.uint8_value = 1;
         sdk_os_timer_arm (&safety_timer, SAFETY_DELAY, 0 );
     } else {
-        valve_1_in_use.value.bool_value = 0;
+        valve_1_in_use.value.uint8_value = 0;
         sdk_os_timer_disarm (&safety_timer);
     }
-    relay_write(!valve_1_active.value.bool_value, VALVE_1_GPIO);
+    relay_write(!valve_1_active.value.uint8_value, VALVE_1_GPIO);
     /* relay requies low for on */
-    led_write(valve_1_active.value.bool_value, LED_GPIO);
+    if (valve_1_active.value.uint8_value || valve_2_active.value.uint8_value) {
+        led_write(true, LED_GPIO);
+    } else {
+        led_write(false, LED_GPIO);
+    }
     homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
+    sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
+}
+
+void valve_2_active_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
+
+    LOG(LOG_ACTION, "%s: Value: %d\n", __func__,valve_2_active.value.uint8_value);
+    if (valve_2_active.value.uint8_value == 1){
+        valve_2_in_use.value.uint8_value = 1;
+        sdk_os_timer_arm (&safety_timer_2, SAFETY_DELAY, 0 );
+    } else {
+        valve_2_in_use.value.uint8_value = 0;
+        sdk_os_timer_disarm (&safety_timer_2);
+    }
+    relay_write(!valve_2_active.value.uint8_value, VALVE_2_GPIO);
+    if (valve_2_active.value.uint8_value || valve_1_active.value.uint8_value) {
+        led_write(true, LED_GPIO);
+    } else {
+        led_write(false, LED_GPIO);
+    }
+    homekit_characteristic_notify(&valve_2_in_use, valve_2_in_use.value);
     sdk_os_timer_arm (&save_timer, SAVE_DELAY, 0 );
 }
 
@@ -190,8 +263,18 @@ homekit_accessory_t *accessories[] = {
             &wifi_reset,
             &ota_beta,
             &lcm_beta,
+            &lcm_emergency,
+            &preserve_state,
+            &log_level_ch,
             &task_stats,
             &wifi_check_interval,
+            NULL
+        }),
+        HOMEKIT_SERVICE(VALVE, .characteristics=(homekit_characteristic_t*[]){
+            HOMEKIT_CHARACTERISTIC(NAME, "Valve 2"),
+            &valve_2_active,
+            &valve_2_in_use,
+            &valve_2_valve_type,
             NULL
         }),
         NULL
@@ -209,15 +292,17 @@ homekit_server_config_t config = {
 
 void recover_from_reset (int reason){
     /* called if we restarted abnormally */
-    printf ("%s: reason %d\n", __func__, reason);
+    LOG(LOG_ERR, "%s: reason %d\n", __func__, reason);
 }
 
 void save_characteristics ( ){
     
-    printf ("%s:\n", __func__);
+    LOG(LOG_FLOW, "%s:\n", __func__);
     save_characteristic_to_flash(&wifi_check_interval, wifi_check_interval.value);
     save_characteristic_to_flash(&valve_1_active, valve_1_active.value);
     save_characteristic_to_flash(&valve_1_in_use, valve_1_in_use.value);
+    save_characteristic_to_flash(&valve_2_active, valve_2_active.value);
+    save_characteristic_to_flash(&valve_2_in_use, valve_2_in_use.value);
 }
 
 
@@ -231,10 +316,15 @@ void accessory_init (void ){
     load_characteristic_from_flash(&wifi_check_interval);
     save_characteristic_to_flash(&valve_1_active, valve_1_active.value);
     save_characteristic_to_flash(&valve_1_in_use, valve_1_in_use.value);
+    save_characteristic_to_flash(&valve_2_active, valve_2_active.value);
+    save_characteristic_to_flash(&valve_2_in_use, valve_2_in_use.value);
     homekit_characteristic_notify(&wifi_check_interval, wifi_check_interval.value);
     homekit_characteristic_notify(&valve_1_active, valve_1_active.value);
     homekit_characteristic_notify(&valve_1_in_use, valve_1_in_use.value);
+    homekit_characteristic_notify(&valve_2_active, valve_2_active.value);
+    homekit_characteristic_notify(&valve_2_in_use, valve_2_in_use.value);
     sdk_os_timer_setfn(&safety_timer, safety_timer_function, NULL);
+    sdk_os_timer_setfn(&safety_timer_2, safety_timer_function_2, NULL);
 }
 
 void user_init(void) {
