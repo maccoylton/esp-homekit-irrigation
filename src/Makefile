@@ -2,19 +2,19 @@ PROGRAM = main
 
 EXTRA_COMPONENTS = \
 	extras/dht \
-    extras/dhcpserver \
 	extras/http-parser \
 	extras/rboot-ota \
-	$(abspath ../components/esp-wolfssl) \
-	$(abspath ../components/esp-cjson) \
-	$(abspath ../components/esp-homekit) \
-        $(abspath ../components/esp-adv-button) \
-    $(abspath ../components/UDPlogger)\
-    $(abspath ../components/esp-wifi-config) \
-    $(abspath ../components/esp-homekit-common-functions/led_codes)\
-    $(abspath ../components/esp-homekit-common-functions/ota)\
-    $(abspath ../components/esp-homekit-common-functions/custom_characteristics)\
-    $(abspath ../components/esp-homekit-common-functions/shared_functions)
+    extras/dhcpserver \
+	$(abspath ../../components/esp-wolfssl) \
+	$(abspath ../../components/esp-cjson) \
+	$(abspath ../../components/esp-homekit) \
+    $(abspath ../../components/esp-wifi-config)\
+    $(abspath ../../components/UDPlogger)\
+    $(abspath ../../components/esp-adv-button)\
+    $(abspath ../../components/esp-homekit-common-functions/led_codes)\
+    $(abspath ../../components/esp-homekit-common-functions/ota)\
+    $(abspath ../../components/esp-homekit-common-functions/custom_characteristics)\
+    $(abspath ../../components/esp-homekit-common-functions/shared_functions)
 
 
 
@@ -38,7 +38,7 @@ EXTRA_CFLAGS += -DconfigUSE_TRACE_FACILITY
 include $(SDK_PATH)/common.mk
 
 signature:
-	$(shell /usr/local/opt/openssl/bin/openssl   sha384 -binary -out firmware/main.bin.sig firmware/main.bin)
+	$(shell /opt/local/bin/openssl sha384 -binary -out firmware/main.bin.sig firmware/main.bin)
 	$(shell printf "%08x" `cat firmware/main.bin | wc -c`| xxd -r -p >>firmware/main.bin.sig)
  
 monitor:

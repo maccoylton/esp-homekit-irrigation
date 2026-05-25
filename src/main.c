@@ -78,7 +78,7 @@ homekit_characteristic_t valve_2_valve_type = HOMEKIT_CHARACTERISTIC_(VALVE_TYPE
 // The GPIO pin that is connected to the first relay on the irrigation controller.
 const int VALVE_1_GPIO = 4;
 // The GPIO pin that is connected to the second relay on the irrigation controller.
-const int VALVE_2_GPIO = 5; // FIXME: set this after disassembling device
+const int VALVE_2_GPIO = 5; 
 // The GPIO pin that is connected to the LED on the irrigation controller.
 const int LED_GPIO = 2;
 // The GPIO pin that is oconnected to the button on the irrigation controller.
