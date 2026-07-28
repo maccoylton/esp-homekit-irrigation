@@ -8,7 +8,7 @@
 #define DEVICE_NAME "Irrigation"
 #define DEVICE_MODEL "2"
 #define DEVICE_SERIAL "12345678"
-#define FW_VERSION "0.0.6"
+#define FW_VERSION "0.0.7"
 
 #include <stdio.h>
 #include <espressif/esp_wifi.h>
@@ -55,6 +55,7 @@ homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESE
 homekit_characteristic_t ota_beta     = HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_BETA, false, .setter=ota_beta_set);
 homekit_characteristic_t lcm_beta    = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_BETA, false, .setter=lcm_beta_set);
 homekit_characteristic_t lcm_emergency = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_EMERGENCY, false, .setter=lcm_emergency_set);
+homekit_characteristic_t factory_password = HOMEKIT_CHARACTERISTIC_(CUSTOM_SET_FACTORY_PASSWORD, .setter=factory_reset_set_password_callback);
 homekit_characteristic_t preserve_state   = HOMEKIT_CHARACTERISTIC_(CUSTOM_PRESERVE_STATE, false, .setter=preserve_state_set);
 homekit_characteristic_t log_level_ch     = HOMEKIT_CHARACTERISTIC_(CUSTOM_LOG_LEVEL, 2, .setter=log_level_set);
 
@@ -268,6 +269,7 @@ homekit_accessory_t *accessories[] = {
             &log_level_ch,
             &task_stats,
             &wifi_check_interval,
+            &factory_password,
             NULL
         }),
         HOMEKIT_SERVICE(VALVE, .characteristics=(homekit_characteristic_t*[]){
@@ -334,5 +336,6 @@ void user_init(void) {
     gpio_init();
 
     wifi_config_init(DEVICE_NAME, NULL, on_wifi_ready);
+    factory_reset_cmd_start();
     
 }
